@@ -1,27 +1,46 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.Playables;
 using UnityEngine.XR.Interaction.Toolkit;
 
 public class FishingRod : MonoBehaviour
 {
     public GameObject redSpot;
     public GameObject greenSpot;
-    public float movementThreshold = 0.1f; // Set the threshold value based on your requirement
-    public float successHoldDuration = 5f; // Duration in seconds to hold within threshold for success
-    private bool isGrabbed = false;
-    private Vector3 initialPosition;
-    private float holdTimer;
+    public float angleThreshold = 15.0f;
+    public float checkDuration = 5f;
+    public float checkInterval = 60f;
+    public int totalChecks = 5;
+    public PlayableDirector gameSuccessTimeline;
+    public PlayableDirector gameFailureTimeline;
 
     private XRBaseInteractable interactable;
+    private bool isGrabbed = false;
+    private Quaternion initialRotation;
+    private Vector3 initialDirection;
+    private int successCount = 0;
+    private int failureCount = 0;
+    private int currentCheck = 0;
 
     void Start()
     {
-        // Get the XRBaseInteractable component
         interactable = GetComponent<XRBaseInteractable>();
 
-        // Subscribe to the select events (grabbing)
+        // Let's add a null check for safety
+        if(interactable == null)
+        {
+            Debug.LogError("XRBaseInteractable component is missing on the GameObject.");
+            return;
+        }
+
         interactable.selectEntered.AddListener(Grabbed);
         interactable.selectExited.AddListener(Released);
+
+        if(redSpot == null || greenSpot == null)
+        {
+            Debug.LogError("Ensure redSpot and greenSpot are set in the inspector.");
+            return;
+        }
 
         redSpot.SetActive(false);
         greenSpot.SetActive(false);
@@ -30,8 +49,10 @@ public class FishingRod : MonoBehaviour
     private void Grabbed(SelectEnterEventArgs args)
     {
         isGrabbed = true;
-        initialPosition = transform.position;
-        holdTimer = 0f;
+        initialRotation = transform.rotation;
+        initialDirection = transform.up; // Considering the rod swings up and down primarily
+        Debug.Log("Rod Grabbed, Initial Rotation: " + initialRotation.eulerAngles);
+        StartCoroutine(CheckSwing());
     }
 
     private void Released(SelectExitEventArgs args)
@@ -39,50 +60,94 @@ public class FishingRod : MonoBehaviour
         isGrabbed = false;
         redSpot.SetActive(false);
         greenSpot.SetActive(false);
+        StopAllCoroutines();
+        Debug.Log("Rod Released.");
     }
 
-    void Update()
+    private IEnumerator CheckSwing()
     {
-        if (isGrabbed)
+        while (isGrabbed && currentCheck < totalChecks)
         {
-            float distance = Vector3.Distance(initialPosition, transform.position);
+            yield return new WaitForSeconds(checkInterval - checkDuration);
 
-            if (distance > movementThreshold)
+            float maxAngleDifference = 0f;
+            float checkEndTime = Time.time + checkDuration;
+            Debug.Log("Check starting...");
+
+            while (Time.time < checkEndTime)
             {
-                // Failed condition
-                Fail();
+                Vector3 currentDirection = transform.up;
+                float angleDifference = Vector3.Angle(initialDirection, currentDirection);
+
+                Debug.Log("Current Angle Difference: " + angleDifference);
+
+                maxAngleDifference = Mathf.Max(maxAngleDifference, angleDifference);
+                yield return null;
+            }
+
+            Debug.Log("Check ended. Max Angle: " + maxAngleDifference);
+
+            if (maxAngleDifference > angleThreshold)
+            {
+                failureCount++;
+                redSpot.SetActive(true);
+                greenSpot.SetActive(false);
+                Debug.Log("Swing too large - Check failed!");
             }
             else
             {
-                // If within threshold, start accumulating time
-                holdTimer += Time.deltaTime;
-                if (holdTimer >= successHoldDuration)
-                {
-                    // Success condition
-                    Success();
-                }
+                successCount++;
+                redSpot.SetActive(false);
+                greenSpot.SetActive(true);
+                Debug.Log("Swing within range - Check successful!");
             }
+
+            currentCheck++;
+            initialDirection = transform.up;
+            yield return new WaitForSeconds(2);
+            redSpot.SetActive(false);
+            greenSpot.SetActive(false);
         }
+
+        DetermineOutcome();
     }
 
-    private void Fail()
+   private void DetermineOutcome()
     {
-        redSpot.SetActive(true);
-        greenSpot.SetActive(false);
-        holdTimer = 0f; // Reset timer
+        if (successCount > 3)
+        {
+            Debug.Log("Game Success! Success count: " + successCount);
+            PlayTimeline(gameSuccessTimeline);
+        }
+        else if (failureCount > 3)
+        {
+            Debug.Log("Game Failure! Failure count: " + failureCount);
+            PlayTimeline(gameFailureTimeline);
+        }
+
+        successCount = 0;
+        failureCount = 0;
+        currentCheck = 0;
     }
 
-    private void Success()
+    private void PlayTimeline(PlayableDirector timeline)
     {
-        redSpot.SetActive(false);
-        greenSpot.SetActive(true);
-        // Optionally, you may want to release the rod automatically or reset the challenge
+        if(timeline != null)
+        {
+            timeline.Play();
+        }
+        else
+        {
+            Debug.LogError("PlayableDirector for the timeline is not assigned.");
+        }
     }
 
     void OnDestroy()
     {
-        // Unsubscribe from the select events (grabbing)
-        interactable.selectEntered.RemoveListener(Grabbed);
-        interactable.selectExited.RemoveListener(Released);
+        if(interactable != null) // Safety check in case it was missing and listeners weren't added
+        {
+            interactable.selectEntered.RemoveListener(Grabbed);
+            interactable.selectExited.RemoveListener(Released);
+        }
     }
 }
