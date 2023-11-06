@@ -5,8 +5,6 @@ using UnityEngine.XR.Interaction.Toolkit;
 
 public class FishingRod : MonoBehaviour
 {
-    public GameObject redSpot;
-    public GameObject greenSpot;
     public float angleThreshold = 15.0f;
     public float checkDuration = 5f;
     public float checkInterval = 60f;
@@ -36,14 +34,6 @@ public class FishingRod : MonoBehaviour
         interactable.selectEntered.AddListener(Grabbed);
         interactable.selectExited.AddListener(Released);
 
-        if(redSpot == null || greenSpot == null)
-        {
-            Debug.LogError("Ensure redSpot and greenSpot are set in the inspector.");
-            return;
-        }
-
-        redSpot.SetActive(false);
-        greenSpot.SetActive(false);
     }
 
     private void Grabbed(SelectEnterEventArgs args)
@@ -58,8 +48,7 @@ public class FishingRod : MonoBehaviour
     private void Released(SelectExitEventArgs args)
     {
         isGrabbed = false;
-        redSpot.SetActive(false);
-        greenSpot.SetActive(false);
+       
         StopAllCoroutines();
         Debug.Log("Rod Released.");
     }
@@ -90,23 +79,18 @@ public class FishingRod : MonoBehaviour
             if (maxAngleDifference > angleThreshold)
             {
                 failureCount++;
-                redSpot.SetActive(true);
-                greenSpot.SetActive(false);
                 Debug.Log("Swing too large - Check failed!");
             }
             else
             {
                 successCount++;
-                redSpot.SetActive(false);
-                greenSpot.SetActive(true);
                 Debug.Log("Swing within range - Check successful!");
             }
 
             currentCheck++;
             initialDirection = transform.up;
             yield return new WaitForSeconds(2);
-            redSpot.SetActive(false);
-            greenSpot.SetActive(false);
+            
         }
 
         DetermineOutcome();
